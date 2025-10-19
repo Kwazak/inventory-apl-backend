@@ -51,15 +51,10 @@ app.use(
   })
 );
 
-// CORS Configuration - Updated for Railway + Vercel
+// CORS Configuration - Updated for Railway + Vercel (Production + Preview)
 const corsOptions = {
   origin: (origin, callback) => {
-    const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-      : ['http://localhost:3000'];
-    
     console.log('CORS Check - Origin:', origin);
-    console.log('CORS Check - Allowed:', allowedOrigins);
     
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) {
@@ -67,20 +62,52 @@ const corsOptions = {
       return callback(null, true);
     }
     
-    // Check if origin is allowed
-    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+    // Get allowed origins from environment variable
+    const envOrigins = process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : [];
+    
+    // Allowed patterns (combining env + regex for Vercel previews)
+    const allowedPatterns = [
+      ...envOrigins, // From environment variable
+      /^https:\/\/inventory-apl-frontend.*\.vercel\.app$/, // All Vercel deployments (production + preview)
+      'http://localhost:3000', // Local development
+      'http://localhost:5173', // Vite local development
+    ];
+    
+    console.log('CORS Check - Allowed Patterns:', {
+      envOrigins,
+      hasVercelPattern: true,
+      totalPatterns: allowedPatterns.length
+    });
+    
+    // Check if origin matches any pattern
+    const isAllowed = allowedPatterns.some(pattern => {
+      if (typeof pattern === 'string') {
+        return origin === pattern;
+      }
+      if (pattern instanceof RegExp) {
+        return pattern.test(origin);
+      }
+      return false;
+    });
+    
+    if (isAllowed) {
       console.log('CORS: Origin allowed');
       callback(null, true);
     } else {
       console.log('CORS: Origin blocked');
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error(`Not allowed by CORS: ${origin}`));
     }
   },
   credentials: process.env.CORS_CREDENTIALS === 'true',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400, // 24 hours
   optionsSuccessStatus: 200,
 };
+
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly
