@@ -6,7 +6,7 @@ async function importDatabase() {
   let connection;
   
   try {
-    console.log('=================================');
+    console.log('\n=================================');
     console.log('  Railway MySQL Database Import  ');
     console.log('=================================\n');
     
@@ -30,7 +30,27 @@ async function importDatabase() {
     if (existingTables.length > 0) {
       console.log('⚠️  Tables already exist, skipping import');
       console.log('✅ Database already initialized\n');
-      return;
+      
+      // Verifikasi tabel yang ada
+      const [tables] = await connection.query('SHOW TABLES');
+      if (tables.length > 0) {
+        console.log('📋 Existing tables:');
+        tables.forEach(table => {
+          const tableName = Object.values(table)[0];
+          console.log(`   ✓ ${tableName}`);
+        });
+      }
+      
+      // Cek jumlah users
+      try {
+        const [users] = await connection.query('SELECT COUNT(*) as count FROM users');
+        console.log(`\n👥 Total users: ${users[0].count}`);
+      } catch (err) {
+        // Ignore
+      }
+      
+      console.log('\n✅ Skipping import, proceeding to start server...\n');
+      return; // Exit gracefully tanpa throw error
     }
     
     // Path ke file schema.sql di folder database
@@ -47,7 +67,10 @@ async function importDatabase() {
       } else {
         console.log('   No .sql files found!\n');
       }
-      process.exit(1);
+      
+      // DON'T EXIT - let server start anyway
+      console.log('⚠️  Continuing without import...\n');
+      return;
     }
     
     console.log('📄 Reading SQL file:', sqlFilePath);
@@ -86,9 +109,14 @@ async function importDatabase() {
       console.log('\n💡 Connection refused. Check:');
       console.log('   - MySQL service is running');
       console.log('   - Environment variables are correct');
+    } else if (error.code === 'ER_TABLE_EXISTS_ERROR') {
+      console.log('\n💡 Table already exists, this is OK');
+      console.log('   - Continuing to start server...\n');
+      return; // Exit gracefully
     }
     
-    throw error;
+    // DON'T THROW - just log and continue
+    console.log('\n⚠️  Import had errors but continuing anyway...\n');
     
   } finally {
     if (connection) {
@@ -101,10 +129,11 @@ async function importDatabase() {
 // Run import
 importDatabase()
   .then(() => {
-    console.log('✅ Script finished successfully');
-    process.exit(0);
+    console.log('✅ Import script finished');
+    // DON'T EXIT - let the process continue to server.js
   })
   .catch((error) => {
-    console.error('❌ Script failed:', error.message);
-    process.exit(1);
+    console.error('⚠️  Import script had errors:', error.message);
+    console.log('➡️  Continuing to server startup anyway...\n');
+    // DON'T EXIT - let server start
   });
