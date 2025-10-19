@@ -1,0 +1,23 @@
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": [
+    "src/__tests__/**",
+    "src/logs/**",
+    "*.test.js",
+    "*.spec.js",
+    "coverage/**",
+    "node_modules/**"
+  ],
+  "exec": "node src/server.js",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "restartable": "rs",
+  "verbose": true,
+  "delay": 1000,
+  "events": {
+    "restart": "osascript -e 'display notification \"Server restarted\" with title \"Nodemon\"'",
+    "crash": "osascript -e 'display notification \"Server crashed - waiting for file changes before starting...\" with title \"Nodemon\"'"
+  }
+}
