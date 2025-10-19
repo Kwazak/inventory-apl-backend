@@ -9,6 +9,8 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "import-db": "node importDB.js",
+    "deploy": "node importDB.js && node server.js"
     "start:debug": "node test-server-debug.js",
     "dev": "nodemon src/server.js",
     "dev:debug": "nodemon test-server-debug.js",
@@ -79,3 +81,4 @@
     "supertest": "^6.3.3"
   }
 }
+
