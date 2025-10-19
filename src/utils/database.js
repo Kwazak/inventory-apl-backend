@@ -3,41 +3,78 @@ const config = require('../config/database');
 const logger = require('../config/logger');
 
 console.log('=== INITIALIZING SEQUELIZE ===');
+
 const env = process.env.NODE_ENV || 'development';
 console.log('Environment:', env);
-const dbConfig = config[env];
 
-console.log('Database configuration:', {
-  database: dbConfig.database,
-  username: dbConfig.username,
-  host: dbConfig.host,
-  port: dbConfig.port,
-  dialect: dbConfig.dialect,
-  timezone: dbConfig.timezone
-});
+let sequelize;
+let dbConfig;
 
-// Create Sequelize instance
-console.log('Creating Sequelize instance...');
-const sequelize = new Sequelize(
-  dbConfig.database,
-  dbConfig.username,
-  dbConfig.password,
-  {
+try {
+  dbConfig = config[env];
+  
+  console.log('Database configuration:', {
+    database: dbConfig.database,
+    username: dbConfig.username ? '***' : 'NOT SET',
     host: dbConfig.host,
     port: dbConfig.port,
     dialect: dbConfig.dialect,
     timezone: dbConfig.timezone,
-    logging: dbConfig.logging,
-    pool: dbConfig.pool,
-    define: dbConfig.define,
-    dialectOptions: dbConfig.dialectOptions || {},
+    storage: dbConfig.storage || 'N/A'
+  });
+
+  // Create Sequelize instance
+  console.log('Creating Sequelize instance...');
+  
+  if (dbConfig.dialect === 'sqlite') {
+    // SQLite configuration
+    sequelize = new Sequelize({
+      dialect: 'sqlite',
+      storage: dbConfig.storage || ':memory:',
+      logging: dbConfig.logging,
+      define: dbConfig.define,
+    });
+    console.log('⚠️  Using SQLite in-memory database (fallback mode)');
+  } else {
+    // PostgreSQL/MySQL configuration
+    sequelize = new Sequelize(
+      dbConfig.database,
+      dbConfig.username,
+      dbConfig.password,
+      {
+        host: dbConfig.host,
+        port: dbConfig.port,
+        dialect: dbConfig.dialect,
+        timezone: dbConfig.timezone,
+        logging: dbConfig.logging,
+        pool: dbConfig.pool,
+        define: dbConfig.define,
+        dialectOptions: dbConfig.dialectOptions || {},
+      }
+    );
   }
-);
-console.log('✓ Sequelize instance created');
+  
+  console.log('✓ Sequelize instance created');
+  
+} catch (error) {
+  console.error('❌ ERROR creating Sequelize instance:', error.message);
+  console.error('Stack:', error.stack);
+  
+  // Create fallback SQLite instance to prevent complete crash
+  console.warn('⚠️  Creating emergency fallback SQLite instance');
+  sequelize = new Sequelize({
+    dialect: 'sqlite',
+    storage: ':memory:',
+    logging: false,
+  });
+  
+  logger.error('❌ Failed to create Sequelize with config, using fallback:', error);
+}
 
 // Test database connection
 const connectDB = async () => {
   console.log('=== TESTING DATABASE CONNECTION ===');
+  
   try {
     console.log('Attempting to authenticate with database...');
     await sequelize.authenticate();
@@ -50,8 +87,19 @@ const connectDB = async () => {
     console.error('Error message:', error.message);
     console.error('Error code:', error.original?.code);
     console.error('Error errno:', error.original?.errno);
+    
+    // Log but don't throw - let the app decide what to do
     logger.error('❌ Unable to connect to database:', error);
-    throw error;
+    
+    // In production, we might want to throw, but for Railway deployment
+    // we'll just log and return false
+    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_NO_DB) {
+      console.error('⚠️  Production mode requires database connection');
+      throw error;
+    }
+    
+    console.warn('⚠️  Continuing without database connection (development/fallback mode)');
+    return false;
   }
 };
 
