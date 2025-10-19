@@ -4,7 +4,7 @@
 -- Efisiensi Ekstrim untuk Demo/Testing
 -- ========================================
 
-CREATE DATABASE IF NOT EXISTS factory_inventory;
+CREATE DATABASE IF NOT EXISTS railway;
 USE factory_inventory;
 
 -- ========================================
@@ -517,3 +517,4 @@ SELECT '🔧 Available Procedures:' as proc_title;
 SELECT '  sp_check_permission(user_id, action) - Check user permissions' as proc1;
 SELECT '  sp_get_dashboard(user_role) - Get dashboard data by role' as proc2;
 SELECT '  sp_log_activity(...) - Log activity with permission check' as proc3;
+
