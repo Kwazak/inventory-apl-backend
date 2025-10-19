@@ -24,17 +24,29 @@ async function importDatabase() {
     
     console.log('✅ Connected to database!\n');
     
-    // Cek apakah tabel sudah ada (skip import jika sudah ada)
+    // Debug: Tampilkan info direktori dan file
+    console.log('📂 Current directory:', __dirname);
+    console.log('📂 Database folder exists?', fs.existsSync(path.join(__dirname, 'database')));
+    
+    // List semua file di folder database jika ada
+    if (fs.existsSync(path.join(__dirname, 'database'))) {
+      console.log('📂 Files in database folder:');
+      fs.readdirSync(path.join(__dirname, 'database')).forEach(file => {
+        console.log(`   - ${file}`);
+      });
+      console.log('');
+    }
+    
+    // Cek apakah tabel users sudah ada
     const [existingTables] = await connection.query("SHOW TABLES LIKE 'users'");
     
     if (existingTables.length > 0) {
-      console.log('⚠️  Tables already exist, skipping import');
-      console.log('✅ Database already initialized\n');
+      console.log('✅ Table "users" already exists, skipping import');
       
-      // Verifikasi tabel yang ada
+      // Verifikasi semua tabel yang ada
       const [tables] = await connection.query('SHOW TABLES');
       if (tables.length > 0) {
-        console.log('📋 Existing tables:');
+        console.log('\n📋 Existing tables:');
         tables.forEach(table => {
           const tableName = Object.values(table)[0];
           console.log(`   ✓ ${tableName}`);
@@ -46,77 +58,141 @@ async function importDatabase() {
         const [users] = await connection.query('SELECT COUNT(*) as count FROM users');
         console.log(`\n👥 Total users: ${users[0].count}`);
       } catch (err) {
-        // Ignore
+        console.log('⚠️  Could not count users:', err.message);
       }
       
-      console.log('\n✅ Skipping import, proceeding to start server...\n');
-      return; // Exit gracefully tanpa throw error
-    }
-    
-    // Path ke file schema.sql di folder database
-    const sqlFilePath = path.join(__dirname, 'database', 'schema.sql');
-    
-    // Cek apakah file ada
-    if (!fs.existsSync(sqlFilePath)) {
-      console.error(`❌ File not found: ${sqlFilePath}`);
-      console.log('\n💡 Available SQL files in current directory:');
-      const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.sql'));
-      if (files.length > 0) {
-        files.forEach(f => console.log(`   - ${f}`));
-        console.log('\n   Update the path in importDB.js if needed.\n');
-      } else {
-        console.log('   No .sql files found!\n');
-      }
-      
-      // DON'T EXIT - let server start anyway
-      console.log('⚠️  Continuing without import...\n');
+      console.log('\n✅ Database already initialized, proceeding to server...\n');
       return;
     }
     
+    // TABEL TIDAK ADA - MULAI IMPORT
+    console.log('⚠️  Table "users" NOT FOUND!');
+    console.log('🔄 Starting database import...\n');
+    
+    // Cari file schema.sql di berbagai lokasi
+    const possiblePaths = [
+      path.join(__dirname, 'database', 'schema.sql'),
+      path.join(__dirname, 'schema.sql'),
+      path.join(__dirname, 'sql', 'schema.sql'),
+      path.join(__dirname, 'database.sql'),
+      path.join(__dirname, 'init.sql')
+    ];
+    
+    let sqlFilePath = null;
+    let sqlContent = null;
+    
+    // Cari file SQL yang ada
+    for (const possiblePath of possiblePaths) {
+      if (fs.existsSync(possiblePath)) {
+        sqlFilePath = possiblePath;
+        console.log(`✅ Found SQL file at: ${sqlFilePath}`);
+        sqlContent = fs.readFileSync(sqlFilePath, 'utf8');
+        break;
+      }
+    }
+    
+    // Jika tidak ada file SQL ditemukan
+    if (!sqlFilePath || !sqlContent) {
+      console.error('\n❌ No SQL schema file found!');
+      console.log('\n🔍 Searched in:');
+      possiblePaths.forEach(p => console.log(`   - ${p}`));
+      
+      console.log('\n💡 Available files in root:');
+      fs.readdirSync(__dirname)
+        .filter(f => f.endsWith('.sql'))
+        .forEach(f => console.log(`   - ${f}`));
+      
+      console.log('\n⚠️  Cannot create tables without schema file!');
+      console.log('➡️  Server will start but database operations will fail!\n');
+      return;
+    }
+    
+    // Execute SQL
     console.log('📄 Reading SQL file:', sqlFilePath);
-    const sql = fs.readFileSync(sqlFilePath, 'utf8');
-    
     console.log('⚡ Executing SQL statements...\n');
-    await connection.query(sql);
     
-    console.log('✅ Database imported successfully!\n');
+    try {
+      await connection.query(sqlContent);
+      console.log('✅ SQL executed successfully!\n');
+    } catch (sqlError) {
+      console.error('❌ SQL execution error:', sqlError.message);
+      
+      // Coba execute statement by statement jika gagal
+      console.log('🔄 Trying to execute statements individually...\n');
+      
+      const statements = sqlContent
+        .split(';')
+        .map(stmt => stmt.trim())
+        .filter(stmt => stmt.length > 0);
+      
+      for (let i = 0; i < statements.length; i++) {
+        try {
+          await connection.query(statements[i]);
+          console.log(`✓ Statement ${i + 1}/${statements.length} executed`);
+        } catch (stmtError) {
+          console.error(`✗ Statement ${i + 1} failed:`, stmtError.message);
+        }
+      }
+    }
     
-    // Verifikasi
+    // Verifikasi hasil import
+    console.log('\n📊 Verifying import...');
     const [tables] = await connection.query('SHOW TABLES');
+    
     if (tables.length > 0) {
-      console.log('📋 Tables created:');
+      console.log('\n✅ Tables created successfully:');
       tables.forEach(table => {
         const tableName = Object.values(table)[0];
         console.log(`   ✓ ${tableName}`);
       });
+      
+      // Cek struktur tabel users
+      try {
+        const [columns] = await connection.query('DESCRIBE users');
+        console.log('\n📋 Table "users" structure:');
+        columns.forEach(col => {
+          console.log(`   - ${col.Field} (${col.Type})`);
+        });
+      } catch (err) {
+        console.log('⚠️  Could not describe users table');
+      }
+      
+      // Cek jumlah users
+      try {
+        const [users] = await connection.query('SELECT COUNT(*) as count FROM users');
+        console.log(`\n👥 Total users: ${users[0].count}`);
+      } catch (err) {
+        console.log('⚠️  Could not count users');
+      }
+      
+      console.log('\n🎉 Database import completed successfully!\n');
+    } else {
+      console.log('\n⚠️  No tables were created!');
+      console.log('❌ Import may have failed!\n');
     }
-    
-    // Cek jumlah users
-    try {
-      const [users] = await connection.query('SELECT COUNT(*) as count FROM users');
-      console.log(`\n👥 Total users: ${users[0].count}`);
-    } catch (err) {
-      // Ignore
-    }
-    
-    console.log('\n🎉 Import completed successfully!\n');
     
   } catch (error) {
-    console.error('\n❌ Import failed!');
+    console.error('\n❌ Import process failed!');
     console.error('Error:', error.message);
+    console.error('Stack:', error.stack);
     
     if (error.code === 'ECONNREFUSED') {
       console.log('\n💡 Connection refused. Check:');
-      console.log('   - MySQL service is running');
+      console.log('   - MySQL service is running on Railway');
       console.log('   - Environment variables are correct');
-    } else if (error.code === 'ER_TABLE_EXISTS_ERROR') {
-      console.log('\n💡 Table already exists, this is OK');
-      console.log('   - Continuing to start server...\n');
-      return; // Exit gracefully
+      console.log('   - Network connectivity');
+    } else if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+      console.log('\n💡 Access denied. Check:');
+      console.log('   - MYSQLUSER is correct');
+      console.log('   - MYSQLPASSWORD is correct');
+      console.log('   - User has proper permissions');
+    } else if (error.code === 'ER_BAD_DB_ERROR') {
+      console.log('\n💡 Database not found. Check:');
+      console.log('   - MYSQLDATABASE name is correct');
+      console.log('   - Database exists on Railway');
     }
     
-    // DON'T THROW - just log and continue
-    console.log('\n⚠️  Import had errors but continuing anyway...\n');
+    console.log('\n⚠️  Server will continue, but database may not work!\n');
     
   } finally {
     if (connection) {
@@ -129,11 +205,9 @@ async function importDatabase() {
 // Run import
 importDatabase()
   .then(() => {
-    console.log('✅ Import script finished');
-    // DON'T EXIT - let the process continue to server.js
+    console.log('✅ Import script finished successfully');
   })
   .catch((error) => {
-    console.error('⚠️  Import script had errors:', error.message);
-    console.log('➡️  Continuing to server startup anyway...\n');
-    // DON'T EXIT - let server start
+    console.error('⚠️  Import script encountered errors:', error.message);
+    console.log('➡️  Continuing to server startup...\n');
   });
