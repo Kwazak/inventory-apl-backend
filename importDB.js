@@ -28,7 +28,7 @@ async function importDatabase() {
     console.log('✅ Connected to database!\n');
     
     // Path ke file schema.sql - SESUAIKAN jika perlu
-    const sqlFilePath = path.join(__dirname, 'schema.sql');
+    const sqlFilePath = path.join(__dirname, 'database', 'schema.sql');
     
     // Cek apakah file ada
     if (!fs.existsSync(sqlFilePath)) {
