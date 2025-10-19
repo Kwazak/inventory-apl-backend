@@ -1,65 +1,120 @@
-const mysql = require('mysql2/promise');
-const fs = require('fs').promises;
-const path = require('path');
+const { Sequelize } = require('sequelize');
+const config = require('../config/database');
+const logger = require('../config/logger');
 
-async function runMigrations() {
-  let connection;
+console.log('=== INITIALIZING SEQUELIZE ===');
+
+const env = process.env.NODE_ENV || 'development';
+console.log('Environment:', env);
+
+let sequelize;
+let dbConfig;
+
+try {
+  dbConfig = config[env];
+  
+  console.log('Database configuration:', {
+    database: dbConfig.database,
+    username: dbConfig.username ? '***' : 'NOT SET',
+    host: dbConfig.host,
+    port: dbConfig.port,
+    dialect: dbConfig.dialect,
+    timezone: dbConfig.timezone,
+    storage: dbConfig.storage || 'N/A'
+  });
+
+  // Create Sequelize instance
+  console.log('Creating Sequelize instance...');
+  
+  // PostgreSQL/MySQL configuration - NO SQLite fallback
+  sequelize = new Sequelize(
+    dbConfig.database,
+    dbConfig.username,
+    dbConfig.password,
+    {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      dialect: dbConfig.dialect,
+      timezone: dbConfig.timezone,
+      logging: dbConfig.logging,
+      pool: dbConfig.pool,
+      define: dbConfig.define,
+      dialectOptions: dbConfig.dialectOptions || {},
+    }
+  );
+  
+  console.log('✓ Sequelize instance created');
+  
+} catch (error) {
+  console.error('❌ ERROR creating Sequelize instance:', error.message);
+  console.error('Stack:', error.stack);
+  
+  // Don't create fallback - just throw
+  console.error('❌ CRITICAL: Cannot start without database');
+  console.error('❌ Please add MySQL database in Railway dashboard');
+  
+  throw error;
+}
+
+// Test database connection
+const connectDB = async () => {
+  console.log('=== TESTING DATABASE CONNECTION ===');
   
   try {
-    // Parse DATABASE_URL
-    const dbUrl = process.env.DATABASE_URL;
-    
-    console.log('🔄 Connecting to database...');
-    connection = await mysql.createConnection(dbUrl);
-    console.log('✅ Connected!');
-    
-    // Cek apakah table sudah ada
-    const [tables] = await connection.query(`
-      SELECT TABLE_NAME 
-      FROM information_schema.TABLES 
-      WHERE TABLE_SCHEMA = DATABASE()
-    `);
-    
-    if (tables.length > 0) {
-      console.log('⏭️  Database already initialized, skipping migration');
-      return;
-    }
-    
-    console.log('🔄 Running migrations...');
-    
-    // Baca file SQL
-    const sqlPath = path.join(__dirname, '../database/schema.sql');
-    const sql = await fs.readFile(sqlPath, 'utf8');
-    
-    // Split by ; dan filter empty
-    const statements = sql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0);
-    
-    // Execute satu per satu
-    for (let i = 0; i < statements.length; i++) {
-      console.log(`   Executing statement ${i + 1}/${statements.length}`);
-      await connection.query(statements[i]);
-    }
-    
-    console.log('✅ Migration completed successfully!');
-    
+    console.log('Attempting to authenticate with database...');
+    await sequelize.authenticate();
+    console.log('✅ Database connection successful');
+    logger.info('✅ Database connection established successfully');
+    return true;
   } catch (error) {
-    console.error('❌ Migration failed:', error.message);
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.end();
+    console.error('=== DATABASE CONNECTION FAILED ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.original?.code);
+    console.error('Error errno:', error.original?.errno);
+    
+    // Log but don't throw - let the app decide what to do
+    logger.error('❌ Unable to connect to database:', error);
+    
+    // In production, we might want to throw, but for Railway deployment
+    // we'll just log and return false
+    if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_NO_DB) {
+      console.error('⚠️  Production mode requires database connection');
+      throw error;
     }
+    
+    console.warn('⚠️  Continuing without database connection (development/fallback mode)');
+    return false;
   }
-}
+};
 
-// Run if called directly
-if (require.main === module) {
-  runMigrations()
-    .then(() => process.exit(0))
-    .catch(() => process.exit(1));
-}
+// Sync database (use with caution in production)
+const syncDB = async (options = {}) => {
+  try {
+    await sequelize.sync(options);
+    logger.info('📊 Database synchronized successfully');
+    return true;
+  } catch (error) {
+    logger.error('❌ Database sync failed:', error);
+    throw error;
+  }
+};
 
-module.exports = runMigrations;
+// Close database connection
+const closeDB = async () => {
+  try {
+    await sequelize.close();
+    logger.info('✅ Database connection closed');
+    return true;
+  } catch (error) {
+    logger.error('❌ Error closing database:', error);
+    throw error;
+  }
+};
+
+module.exports = {
+  sequelize,
+  connectDB,
+  syncDB,
+  closeDB,
+};
