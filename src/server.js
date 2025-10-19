@@ -144,6 +144,116 @@ app.get('/emergency-setup', async (req, res) => {
   }
 });
 
+// ===== EMERGENCY CREATE ADMIN USER ENDPOINT =====
+app.post('/emergency-create-admin', async (req, res) => {
+  const bcrypt = require('bcryptjs');
+  const logs = [];
+  
+  try {
+    logs.push('🚨 EMERGENCY CREATE ADMIN TRIGGERED');
+    
+    // Import User model
+    const { User } = require('./models');
+    
+    // Check if admin already exists
+    const existingAdmin = await User.findOne({ where: { username: 'admin' } });
+    
+    if (existingAdmin) {
+      logs.push('⚠️  Admin user already exists');
+      logs.push(`Username: ${existingAdmin.username}`);
+      logs.push(`Role: ${existingAdmin.role}`);
+      logs.push(`Email: ${existingAdmin.email}`);
+      
+      // Update password saja
+      logs.push('🔄 Updating admin password...');
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      
+      await User.update(
+        { password: hashedPassword },
+        { where: { username: 'admin' } }
+      );
+      
+      logs.push('✅ Admin password updated to: admin123');
+      
+      return res.json({
+        success: true,
+        message: '✅ Admin password updated successfully!',
+        credentials: {
+          username: 'admin',
+          password: 'admin123'
+        },
+        logs
+      });
+    }
+    
+    // Create new admin
+    logs.push('📝 Creating new admin user...');
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    logs.push('🔐 Password hashed successfully');
+    
+    const admin = await User.create({
+      username: 'admin',
+      password: hashedPassword,
+      full_name: 'Administrator',
+      role: 'admin',
+      email: 'admin@factory.com',
+      is_active: true
+    });
+    
+    logs.push('✅ Admin user created successfully!');
+    logs.push(`ID: ${admin.id}`);
+    logs.push(`Username: ${admin.username}`);
+    logs.push(`Role: ${admin.role}`);
+    
+    // Create additional users
+    logs.push('\n📝 Creating additional users...');
+    
+    const viewerPassword = await bcrypt.hash('admin123', 10);
+    const viewer = await User.create({
+      username: 'viewer',
+      password: viewerPassword,
+      full_name: 'Dashboard Viewer',
+      role: 'viewer',
+      email: 'viewer@factory.com',
+      is_active: true
+    });
+    logs.push('✅ Viewer user created');
+    
+    const staffPassword = await bcrypt.hash('admin123', 10);
+    const staff = await User.create({
+      username: 'operator1',
+      password: staffPassword,
+      full_name: 'Operator Produksi',
+      role: 'staff',
+      email: 'operator@factory.com',
+      is_active: true
+    });
+    logs.push('✅ Staff user created');
+    
+    res.json({
+      success: true,
+      message: '🎉 All users created successfully!',
+      users: [
+        { username: 'admin', password: 'admin123', role: 'admin' },
+        { username: 'viewer', password: 'admin123', role: 'viewer' },
+        { username: 'operator1', password: 'admin123', role: 'staff' }
+      ],
+      logs
+    });
+    
+  } catch (error) {
+    logs.push(`❌ ERROR: ${error.message}`);
+    logs.push(`Stack: ${error.stack}`);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack,
+      logs
+    });
+  }
+});
+
 // ===== DATABASE SCHEMA SETUP =====
 const setupDatabaseSchema = async () => {
   const mysql = require('mysql2/promise');
@@ -332,6 +442,7 @@ const startServer = async () => {
       console.log(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       console.log(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
       console.log(`🚨 Emergency setup: http://localhost:${PORT}/emergency-setup`);
+      console.log(`🚨 Emergency create admin: http://localhost:${PORT}/emergency-create-admin`);
       logger.info(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       logger.info(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
       
