@@ -33,6 +33,13 @@ console.log('=== INITIALIZING EXPRESS APP ===');
 console.log('Loading middleware and routes...');
 
 // ============================================================================
+// TRUST PROXY (Important for Railway)
+// ============================================================================
+
+// Trust Railway proxy - must be set before other middleware
+app.set('trust proxy', 1);
+
+// ============================================================================
 // SECURITY MIDDLEWARE
 // ============================================================================
 
@@ -44,24 +51,40 @@ app.use(
   })
 );
 
-// CORS Configuration
+// CORS Configuration - Updated for Railway + Vercel
 const corsOptions = {
   origin: (origin, callback) => {
     const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',')
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
       : ['http://localhost:3000'];
     
+    console.log('CORS Check - Origin:', origin);
+    console.log('CORS Check - Allowed:', allowedOrigins);
+    
     // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin) {
+      console.log('CORS: Allowing request with no origin');
+      return callback(null, true);
+    }
+    
+    // Check if origin is allowed
+    if (allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.includes('*')) {
+      console.log('CORS: Origin allowed');
       callback(null, true);
     } else {
+      console.log('CORS: Origin blocked');
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: process.env.CORS_CREDENTIALS === 'true',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 200,
 };
 app.use(cors(corsOptions));
+
+// Handle preflight requests explicitly
+app.options('*', cors(corsOptions));
 
 // ============================================================================
 // RATE LIMITING
@@ -121,7 +144,7 @@ if (process.env.ENABLE_MORGAN_LOGGING === 'true') {
   app.use(
     morgan('combined', {
       stream: logger.stream,
-      skip: (req) => req.url === '/health', // Skip health check logs
+      skip: (req) => req.url === '/health' || req.url === '/ping', // Skip health check logs
     })
   );
 }
@@ -191,6 +214,32 @@ app.get('/ping', (req, res) => {
     success: true,
     message: 'pong',
     timestamp: new Date().toISOString(),
+  });
+});
+
+// Root endpoint with API info
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Factory Inventory Management API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      ping: '/ping',
+      api: '/api',
+      auth: '/api/auth',
+      materials: '/api/materials',
+      products: '/api/products',
+      suppliers: '/api/suppliers',
+      customers: '/api/customers',
+      bom: '/api/bom',
+      purchaseOrders: '/api/purchase-orders',
+      workOrders: '/api/work-orders',
+      salesOrders: '/api/sales-orders',
+      stock: '/api/stock',
+    },
+    documentation: process.env.ENABLE_SWAGGER === 'true' ? '/api-docs' : null,
   });
 });
 
