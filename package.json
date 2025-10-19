@@ -8,7 +8,7 @@
     "npm": ">=9.0.0"
   },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node importDB.js && node src/server.js",
     "import-db": "node importDB.js",
     "deploy": "node importDB.js && node src/server.js",
     "start:debug": "node test-server-debug.js",
