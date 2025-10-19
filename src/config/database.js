@@ -1,127 +1,171 @@
-const mysql = require('mysql2/promise');
-const fs = require('fs').promises;
-const path = require('path');
+require('dotenv').config();
 
-async function runMigration() {
-  // Skip jika tidak ada DATABASE_URL
-  if (!process.env.DATABASE_URL) {
-    console.log('⏭️  No DATABASE_URL found, skipping SQL migration');
-    process.exit(0);
-  }
+console.log('=== LOADING DATABASE CONFIG ===');
 
-  let connection;
+// Helper function to parse DATABASE_URL (Railway/Heroku format)
+const parseDatabaseUrl = (url) => {
+  if (!url) return null;
   
   try {
-    console.log('🔄 Starting SQL migration...');
+    // Format: postgresql://username:password@host:port/database
+    // Also supports mysql://username:password@host:port/database
+    const match = url.match(/^(\w+):\/\/([^:]+):([^@]+)@([^:/]+):?(\d+)?\/(.+?)(\?.*)?$/);
     
-    // Load database config
-    const dbConfig = require('../src/config/database.js');
-    const config = dbConfig[process.env.NODE_ENV || 'development'];
-    
-    // Connect ke database
-    if (process.env.DATABASE_URL) {
-      connection = await mysql.createConnection(process.env.DATABASE_URL);
-    } else {
-      connection = await mysql.createConnection({
-        host: config.host,
-        port: config.port,
-        user: config.username,
-        password: config.password,
-        database: config.database
-      });
-    }
-    console.log('✅ Connected to database');
-    
-    // Check apakah sudah ada tables
-    const [tables] = await connection.query(`
-      SELECT TABLE_NAME 
-      FROM information_schema.TABLES 
-      WHERE TABLE_SCHEMA = DATABASE()
-    `);
-    
-    if (tables.length > 0) {
-      console.log('⏭️  Database already has tables, skipping migration');
-      console.log(`   Existing tables: ${tables.map(t => t.TABLE_NAME).join(', ')}`);
-      return;
-    }
-    
-    // Path ke file SQL
-    const sqlFilePath = path.join(__dirname, '../database/schema.sql');
-    
-    // Check apakah file ada
-    try {
-      await fs.access(sqlFilePath);
-    } catch (error) {
-      console.log('⚠️  SQL file not found at:', sqlFilePath);
-      console.log('   Skipping migration');
-      return;
-    }
-    
-    console.log('📄 Reading SQL file...');
-    const sqlContent = await fs.readFile(sqlFilePath, 'utf8');
-    
-    // Split SQL statements by semicolon
-    const statements = sqlContent
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0)
-      .filter(s => !s.startsWith('--')) // Remove comments
-      .filter(s => !s.startsWith('/*')); // Remove block comments
-    
-    console.log(`🔄 Executing ${statements.length} SQL statements...`);
-    
-    // Execute each statement
-    for (let i = 0; i < statements.length; i++) {
-      const statement = statements[i];
+    if (match) {
+      const [, protocol, username, password, host, port, database] = match;
       
-      try {
-        await connection.query(statement);
-        
-        // Log progress
-        if ((i + 1) % 5 === 0 || i === statements.length - 1) {
-          console.log(`   Progress: ${i + 1}/${statements.length} statements executed`);
-        }
-        
-      } catch (queryError) {
-        console.error(`❌ Error executing statement ${i + 1}:`, queryError.message);
-        console.error(`   Statement: ${statement.substring(0, 100)}...`);
-        // Continue with other statements
+      // Determine dialect from protocol
+      let dialect = protocol;
+      if (protocol === 'postgresql' || protocol === 'postgres') {
+        dialect = 'postgres';
+      } else if (protocol === 'mysql') {
+        dialect = 'mysql';
       }
+      
+      console.log('✅ DATABASE_URL parsed successfully');
+      console.log(`   Dialect: ${dialect}, Host: ${host}, Database: ${database}`);
+      
+      return {
+        dialect,
+        username,
+        password,
+        database,
+        host,
+        port: parseInt(port || (dialect === 'mysql' ? '3306' : '5432'), 10)
+      };
     }
-    
-    // Verify tables created
-    const [newTables] = await connection.query(`
-      SELECT TABLE_NAME 
-      FROM information_schema.TABLES 
-      WHERE TABLE_SCHEMA = DATABASE()
-    `);
-    
-    console.log('✅ Migration completed successfully!');
-    console.log(`   Created ${newTables.length} tables: ${newTables.map(t => t.TABLE_NAME).join(', ')}`);
-    
   } catch (error) {
-    console.error('❌ Migration failed:', error.message);
-    console.error('   Stack:', error.stack);
-    
-    // Jangan fail build di Railway
-    console.log('⚠️  Continuing despite migration error...');
-    process.exit(0);
-    
-  } finally {
-    if (connection) {
-      await connection.end();
-      console.log('🔌 Database connection closed');
-    }
+    console.error('❌ Error parsing DATABASE_URL:', error.message);
   }
-}
+  
+  return null;
+};
 
-// Run migration
-runMigration()
-  .then(() => {
-    console.log('🎉 Migration script finished');
-    process.exit(0);
-  })
-  .catch((error) => {
-    console.error('💥 Fatal error:', error);
-    process.exit(0); // Exit 0 agar tidak fail Railway build
-  });
+// Try to get config from DATABASE_URL first (Railway style)
+const urlConfig = parseDatabaseUrl(process.env.DATABASE_URL);
+
+// Create configuration for each environment
+const createConfig = (env) => {
+  // Priority 1: Use DATABASE_URL if available
+  if (urlConfig) {
+    console.log(`✅ Using DATABASE_URL for ${env} environment`);
+    
+    return {
+      username: urlConfig.username,
+      password: urlConfig.password,
+      database: urlConfig.database,
+      host: urlConfig.host,
+      port: urlConfig.port,
+      dialect: urlConfig.dialect,
+      timezone: '+07:00',
+      logging: env === 'development' ? console.log : false,
+      pool: {
+        max: 5,
+        min: 0,
+        acquire: 30000,
+        idle: 10000,
+      },
+      dialectOptions: urlConfig.dialect === 'postgres' ? {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      } : {},
+      define: {
+        timestamps: true,
+        underscored: true,
+        freezeTableName: false,
+      }
+    };
+  }
+  
+  // Priority 2: Use individual environment variables
+  const username = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  const database = process.env.DB_NAME;
+  const host = process.env.DB_HOST;
+  const port = parseInt(process.env.DB_PORT || '5432', 10);
+  const dialect = process.env.DB_DIALECT || 'postgres';
+  
+  // Check if we have minimal config
+  if (username && database && host) {
+    console.log(`✅ Using individual DB_* variables for ${env} environment`);
+    console.log(`   Host: ${host}, Database: ${database}`);
+    
+    return {
+      username,
+      password,
+      database,
+      host,
+      port,
+      dialect,
+      timezone: '+07:00',
+      logging: env === 'development' ? console.log : false,
+      pool: {
+        max: 5,
+        min: 0,
+        acquire: 30000,
+        idle: 10000,
+      },
+      dialectOptions: process.env.DB_SSL === 'true' ? {
+        ssl: {
+          require: true,
+          rejectUnauthorized: false
+        }
+      } : {},
+      define: {
+        timestamps: true,
+        underscored: true,
+        freezeTableName: false,
+      }
+    };
+  }
+  
+  // Priority 3: Fallback to safe defaults (SQLite in-memory)
+  console.warn('⚠️  WARNING: No database configuration found!');
+  console.warn('⚠️  Falling back to SQLite in-memory (data will NOT persist)');
+  console.warn('⚠️  Please set DATABASE_URL or DB_* environment variables in Railway');
+  
+  return {
+    username: 'user',
+    password: 'password',
+    database: 'database',
+    host: 'localhost',
+    port: 3306,
+    dialect: 'sqlite',
+    storage: ':memory:', // SQLite in-memory
+    timezone: '+07:00',
+    logging: false,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000,
+    },
+    dialectOptions: {},
+    define: {
+      timestamps: true,
+      underscored: true,
+      freezeTableName: false,
+    }
+  };
+};
+
+// Export configurations for all environments
+const config = {
+  development: createConfig('development'),
+  test: createConfig('test'),
+  production: createConfig('production'),
+};
+
+// Log final config (without sensitive data)
+const env = process.env.NODE_ENV || 'development';
+console.log(`Final config for ${env}:`, {
+  host: config[env].host,
+  port: config[env].port,
+  database: config[env].database,
+  dialect: config[env].dialect,
+  username: config[env].username ? '***' : 'NOT SET',
+});
+
+module.exports = config;
