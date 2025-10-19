@@ -11,9 +11,6 @@ async function importDatabase() {
     console.log('=================================\n');
     
     console.log('🔄 Connecting to Railway MySQL...');
-    console.log('Host:', process.env.MYSQLHOST || 'Not set');
-    console.log('Database:', process.env.MYSQLDATABASE || 'Not set');
-    console.log('User:', process.env.MYSQLUSER || 'Not set');
     
     // Koneksi menggunakan Railway env variables
     connection = await mysql.createConnection({
@@ -22,101 +19,89 @@ async function importDatabase() {
       user: process.env.MYSQLUSER,
       password: process.env.MYSQLPASSWORD,
       database: process.env.MYSQLDATABASE,
-      multipleStatements: true // PENTING untuk import SQL file
+      multipleStatements: true
     });
     
     console.log('✅ Connected to database!\n');
     
-    // Path ke file schema.sql - SESUAIKAN jika perlu
+    // Cek apakah tabel sudah ada (skip import jika sudah ada)
+    const [existingTables] = await connection.query("SHOW TABLES LIKE 'users'");
+    
+    if (existingTables.length > 0) {
+      console.log('⚠️  Tables already exist, skipping import');
+      console.log('✅ Database already initialized\n');
+      return;
+    }
+    
+    // Path ke file schema.sql di folder database
     const sqlFilePath = path.join(__dirname, 'database', 'schema.sql');
     
     // Cek apakah file ada
     if (!fs.existsSync(sqlFilePath)) {
       console.error(`❌ File not found: ${sqlFilePath}`);
-      console.log('\n💡 Tip: Pastikan file schema.sql ada di folder yang sama dengan importDB.js');
-      console.log('   Atau sesuaikan path di script ini.\n');
+      console.log('\n💡 Available SQL files in current directory:');
+      const files = fs.readdirSync(__dirname).filter(f => f.endsWith('.sql'));
+      if (files.length > 0) {
+        files.forEach(f => console.log(`   - ${f}`));
+        console.log('\n   Update the path in importDB.js if needed.\n');
+      } else {
+        console.log('   No .sql files found!\n');
+      }
       process.exit(1);
     }
     
     console.log('📄 Reading SQL file:', sqlFilePath);
-    
-    // Baca file SQL
     const sql = fs.readFileSync(sqlFilePath, 'utf8');
     
-    console.log('⚡ Executing SQL statements...');
-    console.log('   (This may take a moment...)\n');
-    
-    // Execute SQL
+    console.log('⚡ Executing SQL statements...\n');
     await connection.query(sql);
     
     console.log('✅ Database imported successfully!\n');
     
-    // Verifikasi: tampilkan semua tabel yang dibuat
-    console.log('📋 Checking created tables...');
+    // Verifikasi
     const [tables] = await connection.query('SHOW TABLES');
-    
     if (tables.length > 0) {
-      console.log('✅ Tables created:');
+      console.log('📋 Tables created:');
       tables.forEach(table => {
         const tableName = Object.values(table)[0];
         console.log(`   ✓ ${tableName}`);
       });
-    } else {
-      console.log('⚠️  No tables found');
     }
     
-    // Cek jumlah data di beberapa tabel (opsional)
-    console.log('\n📊 Data summary:');
+    // Cek jumlah users
     try {
       const [users] = await connection.query('SELECT COUNT(*) as count FROM users');
-      console.log(`   👥 Users: ${users[0].count}`);
+      console.log(`\n👥 Total users: ${users[0].count}`);
     } catch (err) {
-      console.log('   ⚠️  Users table check skipped');
+      // Ignore
     }
     
-    try {
-      const [products] = await connection.query('SELECT COUNT(*) as count FROM products');
-      console.log(`   📦 Products: ${products[0].count}`);
-    } catch (err) {
-      // Table might not exist
-    }
-    
-    console.log('\n🎉 Import completed successfully!');
+    console.log('\n🎉 Import completed successfully!\n');
     
   } catch (error) {
     console.error('\n❌ Import failed!');
     console.error('Error:', error.message);
     
-    if (error.code) {
-      console.error('Error Code:', error.code);
-    }
-    
     if (error.code === 'ECONNREFUSED') {
-      console.log('\n💡 Connection refused. Please check:');
-      console.log('   - MySQL service is running on Railway');
+      console.log('\n💡 Connection refused. Check:');
+      console.log('   - MySQL service is running');
       console.log('   - Environment variables are correct');
     }
     
-    if (error.code === 'ER_ACCESS_DENIED_ERROR') {
-      console.log('\n💡 Access denied. Please check:');
-      console.log('   - MYSQLUSER and MYSQLPASSWORD are correct');
-    }
-    
-    process.exit(1);
+    throw error;
     
   } finally {
-    // Tutup koneksi
     if (connection) {
       await connection.end();
-      console.log('🔌 Database connection closed\n');
+      console.log('🔌 Connection closed\n');
     }
   }
 }
 
-// Jalankan import
+// Run import
 importDatabase()
   .then(() => {
-    console.log('✅ Script finished successfully\n');
+    console.log('✅ Script finished successfully');
     process.exit(0);
   })
   .catch((error) => {
