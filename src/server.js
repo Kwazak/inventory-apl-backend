@@ -21,6 +21,121 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 
 console.log(`Server configuration: PORT=${PORT}, NODE_ENV=${NODE_ENV}`);
 
+// ===== DATABASE SCHEMA SETUP =====
+const setupDatabaseSchema = async () => {
+  const mysql = require('mysql2/promise');
+  const fs = require('fs');
+  const path = require('path');
+  
+  let connection;
+  
+  try {
+    console.log('\n🔧 ================================');
+    console.log('   DATABASE SCHEMA CHECK');
+    console.log('================================\n');
+    
+    connection = await mysql.createConnection({
+      host: process.env.MYSQLHOST || process.env.DB_HOST,
+      port: process.env.MYSQLPORT || process.env.DB_PORT || 3306,
+      user: process.env.MYSQLUSER || process.env.DB_USER,
+      password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD,
+      database: process.env.MYSQLDATABASE || process.env.DB_NAME,
+      multipleStatements: true
+    });
+    
+    console.log('✅ Connected to MySQL for schema check');
+    
+    // Check if users table exists
+    const [existingTables] = await connection.query("SHOW TABLES LIKE 'users'");
+    
+    if (existingTables.length > 0) {
+      console.log('✅ Table "users" exists');
+      
+      // Verify all tables
+      const [allTables] = await connection.query('SHOW TABLES');
+      console.log(`📋 Found ${allTables.length} tables in database:`);
+      allTables.forEach(table => {
+        const tableName = Object.values(table)[0];
+        console.log(`   ✓ ${tableName}`);
+      });
+      
+      await connection.end();
+      console.log('✅ Database schema ready\n');
+      return true;
+    }
+    
+    // Tables don't exist - import schema
+    console.log('⚠️  Table "users" NOT FOUND');
+    console.log('🔄 Importing database schema...\n');
+    
+    const sqlPath = path.join(__dirname, '..', 'database', 'schema.sql');
+    
+    if (!fs.existsSync(sqlPath)) {
+      console.error(`❌ Schema file not found: ${sqlPath}`);
+      console.log('\n📂 Checking alternative locations...');
+      
+      const alternatives = [
+        path.join(__dirname, 'database', 'schema.sql'),
+        path.join(__dirname, '..', 'schema.sql'),
+        path.join(__dirname, '..', 'sql', 'schema.sql')
+      ];
+      
+      let foundPath = null;
+      for (const alt of alternatives) {
+        if (fs.existsSync(alt)) {
+          foundPath = alt;
+          console.log(`✅ Found at: ${alt}`);
+          break;
+        }
+      }
+      
+      if (!foundPath) {
+        console.error('❌ No schema file found in any location!');
+        await connection.end();
+        return false;
+      }
+      
+      const sql = fs.readFileSync(foundPath, 'utf8');
+      console.log('⚡ Executing SQL statements...');
+      await connection.query(sql);
+    } else {
+      console.log(`📄 Reading: ${sqlPath}`);
+      const sql = fs.readFileSync(sqlPath, 'utf8');
+      
+      console.log('⚡ Executing SQL statements...');
+      await connection.query(sql);
+    }
+    
+    // Verify import
+    const [newTables] = await connection.query('SHOW TABLES');
+    
+    if (newTables.length > 0) {
+      console.log('\n✅ Schema imported successfully!');
+      console.log('📋 Tables created:');
+      newTables.forEach(table => {
+        const tableName = Object.values(table)[0];
+        console.log(`   ✓ ${tableName}`);
+      });
+    } else {
+      console.log('\n⚠️  No tables created - check SQL file');
+    }
+    
+    await connection.end();
+    console.log('🔌 Connection closed\n');
+    return true;
+    
+  } catch (error) {
+    console.error('\n❌ Database schema setup error:', error.message);
+    console.error('Stack:', error.stack);
+    if (connection) {
+      await connection.end();
+    }
+    // Don't fail - let server continue
+    console.log('⚠️  Continuing without schema setup...\n');
+    return false;
+  }
+};
+
 // Test database connection
 const connectDatabase = async () => {
   console.log('=== CONNECTING TO DATABASE ===');
@@ -31,8 +146,6 @@ const connectDatabase = async () => {
     logger.info('✅ Database connection established successfully');
 
     if (NODE_ENV === 'development') {
-      // Sync models in development (be careful with this in production)
-      // await sequelize.sync({ alter: true });
       console.log('📊 Development mode: Database models ready');
       logger.info('📊 Database models synced (development mode)');
     }
@@ -42,9 +155,9 @@ const connectDatabase = async () => {
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
     console.error('Database config:', {
-      host: process.env.DB_HOST,
-      database: process.env.DB_NAME,
-      username: process.env.DB_USER,
+      host: process.env.DB_HOST || process.env.MYSQLHOST,
+      database: process.env.DB_NAME || process.env.MYSQLDATABASE,
+      username: process.env.DB_USER || process.env.MYSQLUSER,
       dialect: process.env.DB_DIALECT
     });
     logger.error('❌ Unable to connect to database:', error);
@@ -56,10 +169,14 @@ const connectDatabase = async () => {
 const startServer = async () => {
   console.log('=== STARTING SERVER ===');
   try {
+    // Setup database schema FIRST
+    await setupDatabaseSchema();
+    
+    // Then connect with Sequelize
     await connectDatabase();
 
     console.log(`Attempting to start server on port ${PORT}...`);
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log('=== SERVER STARTED SUCCESSFULLY ===');
       console.log(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       console.log(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
