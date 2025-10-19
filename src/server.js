@@ -1,7 +1,7 @@
 require('dotenv').config();
 require('express-async-errors'); // Handle async errors automatically
 
-console.log('🔥🔥🔥 SERVER.JS LOADED - VERSION 3.0 🔥🔥🔥');
+console.log('🔥🔥🔥 SERVER.JS LOADED - VERSION 3.1 🔥🔥🔥');
 console.log('=== SERVER STARTING ===');
 console.log('Environment variables loaded:', {
   NODE_ENV: process.env.NODE_ENV,
@@ -254,6 +254,249 @@ app.post('/emergency-create-admin', async (req, res) => {
   }
 });
 
+// ===== EMERGENCY INSERT SAMPLE DATA =====
+app.post('/emergency-insert-data', async (req, res) => {
+  const logs = [];
+  
+  try {
+    logs.push('🚨 EMERGENCY INSERT SAMPLE DATA TRIGGERED');
+    
+    const { 
+      User, 
+      Supplier, 
+      Customer, 
+      RawMaterial, 
+      Product, 
+      BOM 
+    } = require('./models');
+    
+    const bcrypt = require('bcryptjs');
+    
+    // 1. INSERT USERS
+    logs.push('\n📝 Creating users...');
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    
+    await User.bulkCreate([
+      {
+        username: 'admin',
+        password: hashedPassword,
+        full_name: 'Administrator',
+        role: 'admin',
+        email: 'admin@factory.com',
+        is_active: true
+      },
+      {
+        username: 'viewer',
+        password: hashedPassword,
+        full_name: 'Dashboard Viewer',
+        role: 'viewer',
+        email: 'viewer@factory.com',
+        is_active: true
+      },
+      {
+        username: 'operator1',
+        password: hashedPassword,
+        full_name: 'Operator Produksi',
+        role: 'staff',
+        email: 'operator@factory.com',
+        is_active: true
+      }
+    ], { ignoreDuplicates: true });
+    logs.push('✅ Users created');
+    
+    // 2. INSERT SUPPLIERS
+    logs.push('\n📝 Creating suppliers...');
+    const suppliers = await Supplier.bulkCreate([
+      {
+        name: 'PT Karet Indonesia',
+        contact: 'Budi',
+        phone: '081234567890',
+        address: 'Jakarta',
+        status: 'active'
+      },
+      {
+        name: 'CV Foam Makmur',
+        contact: 'Siti',
+        phone: '081234567891',
+        address: 'Bandung',
+        status: 'active'
+      },
+      {
+        name: 'Toko Bahan Sejahtera',
+        contact: 'Ahmad',
+        phone: '081234567892',
+        address: 'Surabaya',
+        status: 'active'
+      }
+    ], { ignoreDuplicates: true });
+    logs.push(`✅ ${suppliers.length} suppliers created`);
+    
+    // 3. INSERT CUSTOMERS
+    logs.push('\n📝 Creating customers...');
+    const customers = await Customer.bulkCreate([
+      {
+        name: 'Toko Sepatu Jaya',
+        contact: 'Dewi',
+        phone: '081234567893',
+        type: 'wholesale',
+        status: 'active'
+      },
+      {
+        name: 'CV Retail Maju',
+        contact: 'Rudi',
+        phone: '081234567894',
+        type: 'wholesale',
+        status: 'active'
+      },
+      {
+        name: 'Konsumen Umum',
+        contact: '-',
+        phone: '0000000000',
+        type: 'retail',
+        status: 'active'
+      }
+    ], { ignoreDuplicates: true });
+    logs.push(`✅ ${customers.length} customers created`);
+    
+    // 4. INSERT RAW MATERIALS
+    logs.push('\n📝 Creating raw materials...');
+    const materials = await RawMaterial.bulkCreate([
+      {
+        sku: 'RM001',
+        name: 'Karet Sol Hitam',
+        category: 'Karet',
+        unit: 'kg',
+        unit_price: 25000,
+        stock: 500,
+        min_stock: 100,
+        supplier_id: 1,
+        status: 'active'
+      },
+      {
+        sku: 'RM002',
+        name: 'EVA Foam 10mm',
+        category: 'Foam',
+        unit: 'lembar',
+        unit_price: 15000,
+        stock: 200,
+        min_stock: 50,
+        supplier_id: 2,
+        status: 'active'
+      },
+      {
+        sku: 'RM003',
+        name: 'Strap Nilon',
+        category: 'Aksesoris',
+        unit: 'meter',
+        unit_price: 3000,
+        stock: 800,
+        min_stock: 200,
+        supplier_id: 3,
+        status: 'active'
+      },
+      {
+        sku: 'RM004',
+        name: 'Lem PU',
+        category: 'Kimia',
+        unit: 'liter',
+        unit_price: 45000,
+        stock: 100,
+        min_stock: 20,
+        supplier_id: 2,
+        status: 'active'
+      }
+    ], { ignoreDuplicates: true });
+    logs.push(`✅ ${materials.length} raw materials created`);
+    
+    // 5. INSERT PRODUCTS
+    logs.push('\n📝 Creating products...');
+    const products = await Product.bulkCreate([
+      {
+        sku: 'PRD001',
+        name: 'Sandal Jepit Classic',
+        category: 'Sandal Casual',
+        type: 'sendal',
+        size: '39',
+        color: 'Hitam',
+        unit_price: 35000,
+        stock: 200,
+        min_stock: 50,
+        status: 'active'
+      },
+      {
+        sku: 'PRD002',
+        name: 'Sandal Gunung Adventure',
+        category: 'Sandal Outdoor',
+        type: 'sendal',
+        size: '40',
+        color: 'Coklat',
+        unit_price: 150000,
+        stock: 100,
+        min_stock: 30,
+        status: 'active'
+      },
+      {
+        sku: 'PRD003',
+        name: 'Safety Boot Steel Toe',
+        category: 'Boot Safety',
+        type: 'boot',
+        size: '40',
+        color: 'Hitam',
+        unit_price: 350000,
+        stock: 50,
+        min_stock: 20,
+        status: 'active'
+      }
+    ], { ignoreDuplicates: true });
+    logs.push(`✅ ${products.length} products created`);
+    
+    // 6. INSERT BOM (Bill of Materials)
+    logs.push('\n📝 Creating BOM entries...');
+    const boms = await BOM.bulkCreate([
+      { product_id: 1, material_id: 1, quantity: 0.3 },
+      { product_id: 1, material_id: 3, quantity: 0.5 },
+      { product_id: 2, material_id: 1, quantity: 0.5 },
+      { product_id: 2, material_id: 2, quantity: 1 },
+      { product_id: 2, material_id: 3, quantity: 1 },
+      { product_id: 3, material_id: 1, quantity: 1 },
+      { product_id: 3, material_id: 2, quantity: 2 }
+    ], { ignoreDuplicates: true });
+    logs.push(`✅ ${boms.length} BOM entries created`);
+    
+    logs.push('\n🎉 ALL SAMPLE DATA INSERTED SUCCESSFULLY!');
+    
+    res.json({
+      success: true,
+      message: '🎉 Sample data inserted successfully!',
+      summary: {
+        users: 3,
+        suppliers: suppliers.length,
+        customers: customers.length,
+        materials: materials.length,
+        products: products.length,
+        bom_entries: boms.length
+      },
+      credentials: {
+        admin: { username: 'admin', password: 'admin123' },
+        viewer: { username: 'viewer', password: 'admin123' },
+        staff: { username: 'operator1', password: 'admin123' }
+      },
+      logs
+    });
+    
+  } catch (error) {
+    logs.push(`❌ ERROR: ${error.message}`);
+    logs.push(`Stack: ${error.stack}`);
+    
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack,
+      logs
+    });
+  }
+});
+
 // ===== DATABASE SCHEMA SETUP =====
 const setupDatabaseSchema = async () => {
   const mysql = require('mysql2/promise');
@@ -441,8 +684,10 @@ const startServer = async () => {
       console.log('=== SERVER STARTED SUCCESSFULLY ===');
       console.log(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       console.log(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
-      console.log(`🚨 Emergency setup: http://localhost:${PORT}/emergency-setup`);
-      console.log(`🚨 Emergency create admin: http://localhost:${PORT}/emergency-create-admin`);
+      console.log(`\n🚨 EMERGENCY ENDPOINTS (DELETE AFTER USE!):`);
+      console.log(`   GET  ${process.env.API_PREFIX || ''}/emergency-setup - Setup database schema`);
+      console.log(`   POST ${process.env.API_PREFIX || ''}/emergency-create-admin - Create admin users`);
+      console.log(`   POST ${process.env.API_PREFIX || ''}/emergency-insert-data - Insert ALL sample data\n`);
       logger.info(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       logger.info(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
       
