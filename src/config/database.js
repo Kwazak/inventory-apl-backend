@@ -70,6 +70,10 @@ const createConfig = (env) => {
           require: true,
           rejectUnauthorized: false
         }
+      } : urlConfig.dialect === 'mysql' ? {
+        ssl: process.env.MYSQL_SSL !== 'false' ? {
+          rejectUnauthorized: false
+        } : undefined
       } : {},
       define: {
         timestamps: true,
@@ -80,12 +84,12 @@ const createConfig = (env) => {
   }
   
   // Priority 2: Use individual environment variables
-  const username = process.env.DB_USER;
-  const password = process.env.DB_PASSWORD;
-  const database = process.env.DB_NAME;
-  const host = process.env.DB_HOST;
-  const port = parseInt(process.env.DB_PORT || '5432', 10);
-  const dialect = process.env.DB_DIALECT || 'postgres';
+  const username = process.env.DB_USER || process.env.MYSQLUSER;
+  const password = process.env.DB_PASSWORD || process.env.MYSQLPASSWORD;
+  const database = process.env.DB_NAME || process.env.MYSQLDATABASE;
+  const host = process.env.DB_HOST || process.env.MYSQLHOST;
+  const port = parseInt(process.env.DB_PORT || process.env.MYSQLPORT || '3306', 10);
+  const dialect = process.env.DB_DIALECT || 'mysql';
   
   // Check if we have minimal config
   if (username && database && host) {
@@ -107,9 +111,8 @@ const createConfig = (env) => {
         acquire: 30000,
         idle: 10000,
       },
-      dialectOptions: process.env.DB_SSL === 'true' ? {
+      dialectOptions: process.env.DB_SSL === 'true' || dialect === 'mysql' ? {
         ssl: {
-          require: true,
           rejectUnauthorized: false
         }
       } : {},
