@@ -1,6 +1,7 @@
 require('dotenv').config();
 require('express-async-errors'); // Handle async errors automatically
 
+console.log('🔥🔥🔥 SERVER.JS LOADED - VERSION 3.0 🔥🔥🔥');
 console.log('=== SERVER STARTING ===');
 console.log('Environment variables loaded:', {
   NODE_ENV: process.env.NODE_ENV,
@@ -9,7 +10,9 @@ console.log('Environment variables loaded:', {
   DB_NAME: process.env.DB_NAME,
   DB_USER: process.env.DB_USER,
   API_PREFIX: process.env.API_PREFIX,
-  CORS_ORIGIN: process.env.CORS_ORIGIN
+  CORS_ORIGIN: process.env.CORS_ORIGIN,
+  MYSQLHOST: process.env.MYSQLHOST ? 'SET' : 'NOT SET',
+  MYSQLDATABASE: process.env.MYSQLDATABASE ? 'SET' : 'NOT SET'
 });
 
 const app = require('./app');
@@ -21,6 +24,126 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 
 console.log(`Server configuration: PORT=${PORT}, NODE_ENV=${NODE_ENV}`);
 
+// ===== EMERGENCY DATABASE SETUP ENDPOINT =====
+app.get('/emergency-setup', async (req, res) => {
+  const mysql = require('mysql2/promise');
+  const fs = require('fs');
+  const path = require('path');
+  
+  const logs = [];
+  let connection;
+  
+  try {
+    logs.push('🚨 EMERGENCY SETUP TRIGGERED');
+    logs.push(`Current directory: ${__dirname}`);
+    
+    const config = {
+      host: process.env.MYSQLHOST || process.env.DB_HOST,
+      port: process.env.MYSQLPORT || process.env.DB_PORT || 3306,
+      user: process.env.MYSQLUSER || process.env.DB_USER,
+      password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD,
+      database: process.env.MYSQLDATABASE || process.env.DB_NAME,
+      multipleStatements: true
+    };
+    
+    logs.push(`Connecting to: ${config.host}:${config.port}/${config.database}`);
+    
+    connection = await mysql.createConnection(config);
+    logs.push('✅ Connected to MySQL');
+    
+    // Check existing tables
+    const [existingTables] = await connection.query('SHOW TABLES');
+    logs.push(`Current tables: ${existingTables.length}`);
+    existingTables.forEach(t => logs.push(`  - ${Object.values(t)[0]}`));
+    
+    const [userTable] = await connection.query("SHOW TABLES LIKE 'users'");
+    if (userTable.length > 0) {
+      await connection.end();
+      return res.json({ 
+        success: true, 
+        message: 'Tables already exist',
+        tables: existingTables.map(t => Object.values(t)[0]),
+        logs 
+      });
+    }
+    
+    // Find schema.sql
+    const paths = [
+      path.join(__dirname, '..', 'database', 'schema.sql'),
+      path.join(__dirname, 'database', 'schema.sql'),
+      path.join(__dirname, '..', 'schema.sql'),
+      path.join(__dirname, '..', 'sql', 'schema.sql')
+    ];
+    
+    let sqlPath = null;
+    for (const p of paths) {
+      logs.push(`Checking: ${p}`);
+      if (fs.existsSync(p)) {
+        sqlPath = p;
+        logs.push(`✅ FOUND: ${p}`);
+        break;
+      } else {
+        logs.push(`❌ Not found: ${p}`);
+      }
+    }
+    
+    if (!sqlPath) {
+      await connection.end();
+      
+      // List all files in directories
+      logs.push('\n📂 Files in root:');
+      fs.readdirSync(path.join(__dirname, '..')).forEach(f => logs.push(`  - ${f}`));
+      
+      if (fs.existsSync(path.join(__dirname, '..', 'database'))) {
+        logs.push('\n📂 Files in database/:');
+        fs.readdirSync(path.join(__dirname, '..', 'database')).forEach(f => logs.push(`  - ${f}`));
+      }
+      
+      return res.status(404).json({ 
+        error: 'schema.sql not found in any location',
+        logs 
+      });
+    }
+    
+    // Read and execute SQL
+    const sql = fs.readFileSync(sqlPath, 'utf8');
+    logs.push(`📄 SQL file size: ${sql.length} bytes`);
+    logs.push(`First 100 chars: ${sql.substring(0, 100)}...`);
+    
+    logs.push('⚡ Executing SQL...');
+    await connection.query(sql);
+    logs.push('✅ SQL executed successfully');
+    
+    // Verify
+    const [newTables] = await connection.query('SHOW TABLES');
+    logs.push(`✅ Tables created: ${newTables.length}`);
+    
+    const tableNames = newTables.map(t => Object.values(t)[0]);
+    tableNames.forEach(name => logs.push(`  ✓ ${name}`));
+    
+    await connection.end();
+    
+    res.json({ 
+      success: true, 
+      message: '🎉 Database setup complete!',
+      tablesCreated: tableNames,
+      logs 
+    });
+    
+  } catch (error) {
+    if (connection) await connection.end();
+    
+    logs.push(`❌ ERROR: ${error.message}`);
+    logs.push(`Stack: ${error.stack}`);
+    
+    res.status(500).json({ 
+      error: error.message,
+      stack: error.stack,
+      logs 
+    });
+  }
+});
+
 // ===== DATABASE SCHEMA SETUP =====
 const setupDatabaseSchema = async () => {
   const mysql = require('mysql2/promise');
@@ -30,18 +153,28 @@ const setupDatabaseSchema = async () => {
   let connection;
   
   try {
-    console.log('\n🔧 ================================');
+    console.log('\n🔥 setupDatabaseSchema() CALLED');
+    console.log('🔧 ================================');
     console.log('   DATABASE SCHEMA CHECK');
     console.log('================================\n');
     
-    connection = await mysql.createConnection({
+    const config = {
       host: process.env.MYSQLHOST || process.env.DB_HOST,
       port: process.env.MYSQLPORT || process.env.DB_PORT || 3306,
       user: process.env.MYSQLUSER || process.env.DB_USER,
       password: process.env.MYSQLPASSWORD || process.env.DB_PASSWORD,
       database: process.env.MYSQLDATABASE || process.env.DB_NAME,
       multipleStatements: true
+    };
+    
+    console.log('Connection config:', {
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      user: config.user
     });
+    
+    connection = await mysql.createConnection(config);
     
     console.log('✅ Connected to MySQL for schema check');
     
@@ -82,6 +215,7 @@ const setupDatabaseSchema = async () => {
       
       let foundPath = null;
       for (const alt of alternatives) {
+        console.log(`Checking: ${alt}`);
         if (fs.existsSync(alt)) {
           foundPath = alt;
           console.log(`✅ Found at: ${alt}`);
@@ -91,16 +225,24 @@ const setupDatabaseSchema = async () => {
       
       if (!foundPath) {
         console.error('❌ No schema file found in any location!');
+        console.log('\n📂 Current directory contents:');
+        try {
+          fs.readdirSync(__dirname).forEach(f => console.log(`  - ${f}`));
+        } catch (e) {
+          console.log('Could not list directory');
+        }
         await connection.end();
         return false;
       }
       
       const sql = fs.readFileSync(foundPath, 'utf8');
+      console.log(`📄 SQL file size: ${sql.length} bytes`);
       console.log('⚡ Executing SQL statements...');
       await connection.query(sql);
     } else {
       console.log(`📄 Reading: ${sqlPath}`);
       const sql = fs.readFileSync(sqlPath, 'utf8');
+      console.log(`📄 SQL file size: ${sql.length} bytes`);
       
       console.log('⚡ Executing SQL statements...');
       await connection.query(sql);
@@ -128,7 +270,11 @@ const setupDatabaseSchema = async () => {
     console.error('\n❌ Database schema setup error:', error.message);
     console.error('Stack:', error.stack);
     if (connection) {
-      await connection.end();
+      try {
+        await connection.end();
+      } catch (e) {
+        console.error('Error closing connection:', e.message);
+      }
     }
     // Don't fail - let server continue
     console.log('⚠️  Continuing without schema setup...\n');
@@ -167,10 +313,15 @@ const connectDatabase = async () => {
 
 // Start server
 const startServer = async () => {
+  console.log('🔥 startServer() CALLED');
   console.log('=== STARTING SERVER ===');
   try {
+    console.log('🔥 About to call setupDatabaseSchema()...');
+    
     // Setup database schema FIRST
     await setupDatabaseSchema();
+    
+    console.log('🔥 setupDatabaseSchema() completed');
     
     // Then connect with Sequelize
     await connectDatabase();
@@ -180,6 +331,7 @@ const startServer = async () => {
       console.log('=== SERVER STARTED SUCCESSFULLY ===');
       console.log(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       console.log(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
+      console.log(`🚨 Emergency setup: http://localhost:${PORT}/emergency-setup`);
       logger.info(`🚀 Server running in ${NODE_ENV} mode on port ${PORT}`);
       logger.info(`📡 API endpoint: http://localhost:${PORT}${process.env.API_PREFIX || '/api'}`);
       
@@ -249,6 +401,7 @@ const startServer = async () => {
 };
 
 // Start the application
+console.log('🔥 About to call startServer()...');
 startServer();
 
 module.exports = app;
